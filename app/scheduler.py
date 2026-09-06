@@ -50,8 +50,10 @@ def _refresh_jobs() -> None:
         db.close()
 
     existing = {job.id for job in _scheduler.get_jobs()}
+    wanted = set()
     for source in sources:
         job_id = f"source-{source.id}"
+        wanted.add(job_id)
         if job_id not in existing:
             interval = source.interval_seconds or settings.default_interval_seconds
             _scheduler.add_job(
@@ -61,6 +63,10 @@ def _refresh_jobs() -> None:
                 id=job_id,
                 replace_existing=True,
             )
+
+    # Drop jobs whose source was deleted.
+    for job_id in existing - wanted:
+        _scheduler.remove_job(job_id)
 
 
 def stop_scheduler() -> None:

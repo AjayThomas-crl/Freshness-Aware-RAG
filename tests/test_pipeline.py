@@ -131,6 +131,22 @@ class TestChangeDetection:
         assert db.query(ScrapeRun).count() == 1
         assert db.query(ChunkVersion).count() == 0  # nothing versioned
 
+    def test_delete_source_cascades_children(self, db, monkeypatch):
+        content = _content("3.99")
+        _install(content, monkeypatch)
+        src = _add_source(db)
+        pipeline.process_source(db, src)
+
+        assert db.query(ScrapeRun).count() == 1
+        assert db.query(ChunkVersion).count() == _expected_chunks(content)
+
+        db.delete(src)
+        db.commit()
+
+        assert db.query(Source).count() == 0
+        assert db.query(ScrapeRun).count() == 0
+        assert db.query(ChunkVersion).count() == 0
+
 
 def _install(text: str, monkeypatch):
     from tests.conftest import install_fakes

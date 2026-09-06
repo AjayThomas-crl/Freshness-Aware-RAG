@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
 
-from app import pipeline, scheduler
+from app import pipeline, scheduler, vectorstore
 from app.db import get_db, init_db
 from app.models import Source
 from app.schemas import (
@@ -60,6 +60,7 @@ def delete_source(source_id: int, db: Session = Depends(get_db)):
     source = db.get(Source, source_id)
     if not source:
         raise HTTPException(404, "Source not found")
+    vectorstore.delete_for_source(source_id)
     db.delete(source)
     db.commit()
     scheduler._refresh_jobs()

@@ -49,6 +49,13 @@ def delete(ids: list[str]) -> None:
         col.delete(ids=ids)
 
 
+def delete_for_source(source_id: int) -> None:
+    """Drop every live vector belonging to a source (ids are '{source_id}:{chunk_key}')."""
+    prefix = f"{source_id}:"
+    stale = [i for i in get_all_ids() if i.startswith(prefix)]
+    delete(stale)
+
+
 def search(query_embedding: list[float], top_k: int) -> list[dict]:
     client = _client()
     col = _get_collection(client)

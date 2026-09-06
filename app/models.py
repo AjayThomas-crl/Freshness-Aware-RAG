@@ -26,8 +26,15 @@ class Source(Base):
     interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    versions: Mapped[list["ChunkVersion"]] = relationship(back_populates="source")
-    runs: Mapped[list["ScrapeRun"]] = relationship(back_populates="source")
+    # Delete-orphan cascade: removing a source removes its version history and
+    # run log. Without this, the ORM tries to NULL out the FK on children
+    # (source_id is NOT NULL) and the delete fails.
+    versions: Mapped[list["ChunkVersion"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan"
+    )
+    runs: Mapped[list["ScrapeRun"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan"
+    )
 
 
 class ChunkVersion(Base):
