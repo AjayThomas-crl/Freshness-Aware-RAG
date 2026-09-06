@@ -1,0 +1,138 @@
+from app import pipeline
+from app.chunker import chunk_text
+from app.models import ChunkVersion, ScrapeRun, Source
+
+
+def _content(price: str) -> str:
+    paras = [
+        f"Nestle milk chocolate 100g bar made with cocoa butter and the "
+        f"current retail list price of {price} USD for a single unit.",
+        "This paragraph covers the ingredients list including sugar and "
+        "emulsifiers plus the allergy information in full detail.",
+        "Nutritional values per hundred grams with energy fat and protein "
+        "and carbohydrate content in a table format.",
+        "Shipping is available across Europe with a standard delivery of "
+        "two working days for all orders.",
+        "Stock availability is shown live on the online storefront with "
+        "local pickup options listed per city.",
+    ]
+    return "\n\n".join(paras)
+
+
+def _expected_chunks(content: str) -> int:
+    return len(chunk_text(content))
+
+
+def _add_source(db) -> Source:
+    src = Source(name="nestle", url="https://competitor.example/nestle")
+    db.add(src)
+    db.commit()
+    db.refresh(src)
+    return src
+
+
+class TestChangeDetection:
+    def test_first_scrape_adds_all_and_embeds(self, db, monkeypatch):
+        content = _content("3.99")
+        _, vectorstore = _install(content, monkeypatch)
+        src = _add_source(db)
+
+        run = pipeline.process_source(db, src)
+        db.refresh(run)
+
+        n = _expected_chunks(content)
+        assert run.status == "success"
+        assert run.chunks_added == n
+        assert run.chunks_unchanged == 0
+        assert len(vectorstore.upserts) == 1  # single batched embed call
+        assert len(vectorstore.upserts[0]) == n
+        assert vectorstore.deletes == []
+        assert db.query(ChunkVersion).count() == n
+        assert db.query(ScrapeRun).count() == 1
+
+    def test_unchanged_rescrape_skips_embed(self, db, monkeypatch):
+        content = _content("3.99")
+        _, vectorstore = _install(content, monkeypatch)
+        src = _add_source(db)
+        pipeline.process_source(db, src)
+
+        run = pipeline.process_source(db, src)
+        db.refresh(run)
+
+        n = _expected_chunks(content)
+        assert run.chunks_added == 0
+        assert run.chunks_unchanged == n
+        assert len(vectorstore.upserts) == 1  # no new embed call
+        assert db.query(ChunkVersion).count() == n
+        assert db.query(ScrapeRun).count() == 2  # run still logged
+
+    def test_edit_adds_new_version_and_retires_old(self, db, monkeypatch):
+        before = _content("3.99")
+        _, _ = _install(before, monkeypatch)  # first store (discarded)
+        src = _add_source(db)
+        pipeline.process_source(db, src)
+        first_count = _expected_chunks(before)
+
+        after = _content("4.49")
+        _, vectorstore = _install(after, monkeypatch)  # active store for 2nd run
+        run = pipeline.process_source(db, src)
+        db.refresh(run)
+
+        assert run.status == "success"
+        assert run.chunks_added == 1
+        assert run.chunks_unchanged == first_count - 1
+        # only the changed block was embedded; its stale vector was deleted
+        assert len(vectorstore.upserts) == 1
+        assert len(vectorstore.upserts[0]) == 1
+        assert len(vectorstore.deletes) == 1
+        assert len(vectorstore.deletes[0]) == 1
+
+        versions = db.query(ChunkVersion).order_by(ChunkVersion.version_no).all()
+        assert len(versions) == first_count + 1
+        live = [v for v in versions if v.is_live]
+        removed = [v for v in versions if not v.is_live]
+        assert len(live) == first_count
+        assert len(removed) == 1
+        assert removed[0].removed_at is not None
+
+    def test_history_reports_lineage(self, db, monkeypatch):
+        before = _content("3.99")
+        _install(before, monkeypatch)
+        src = _add_source(db)
+        pipeline.process_source(db, src)
+        first_count = _expected_chunks(before)
+
+        _install(_content("4.49"), monkeypatch)
+        pipeline.process_source(db, src)
+
+        history = pipeline.get_history(db, src.id)
+
+        assert len(history) == first_count + 1
+        removed = [h for h in history if h["action"] == "removed"]
+        live = [h for h in history if h["action"] == "live"]
+        assert len(removed) == 1 and removed[0]["removed_at"] is not None
+        assert len(live) == first_count
+
+    def test_failed_scrape_logs_failed_run(self, db, monkeypatch):
+        import app.pipeline as pl
+
+        class Boom:
+            def scrape(self, url):
+                raise RuntimeError("network down")
+
+        monkeypatch.setattr(pl, "FirecrawlScraper", lambda: Boom())
+        src = _add_source(db)
+
+        run = pipeline.process_source(db, src)
+        db.refresh(run)
+
+        assert run.status == "failed"
+        assert run.error == "network down"
+        assert db.query(ScrapeRun).count() == 1
+        assert db.query(ChunkVersion).count() == 0  # nothing versioned
+
+
+def _install(text: str, monkeypatch):
+    from tests.conftest import install_fakes
+
+    return install_fakes(monkeypatch, text)
