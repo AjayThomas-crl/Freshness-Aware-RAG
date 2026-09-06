@@ -74,6 +74,21 @@ rate-limited; the code currently requires a key).
 Scheduling: APScheduler runs in-process. Each enabled source scrapes every
 `interval_seconds` (default `DEFAULT_INTERVAL_SECONDS`, 6h).
 
+## Web UI (Streamlit)
+
+A thin client in `frontend/` that talks to the backend over HTTP (no direct
+pipeline imports). Three tabs: manage sources + trigger runs, ask questions
+(Path 1), and browse change history (Path 2).
+
+```bash
+# terminal 1 — backend
+uv run uvicorn app.main:app --reload
+# terminal 2 — UI
+uv run streamlit run frontend/app.py
+```
+
+Point the UI at a different backend with `API_URL=http://host:8000`.
+
 ## Project layout
 
 ```
@@ -89,6 +104,10 @@ app/
 ├── pipeline.py    # CORE: change detection, versioning, embed/delete, history
 ├── scheduler.py   # APScheduler job registration
 └── main.py        # FastAPI routes
+frontend/
+├── app.py         # Streamlit UI (sources / ask / history tabs)
+└── api_client.py  # thin HTTP client for the FastAPI backend
+tests/             # pytest suite (chunker, pipeline, API; live tests opt-in)
 ```
 
 ## The core algorithm (`app/pipeline.py`)
