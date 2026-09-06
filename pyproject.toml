@@ -1,0 +1,41 @@
+[project]
+name = "freshness-aware-rag"
+version = "0.1.0"
+description = "Freshness-aware RAG pipeline: scheduled Firecrawl scraping + versioned chunk history + live vector search for competitive analysis."
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy",
+    "pydantic-settings",
+    "python-dotenv",
+    "firecrawl-py",
+    "chromadb",
+    "sentence-transformers",
+    "apscheduler",
+    "httpx",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[tool.uv]
+package = false
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "live: requires network/Firecrawl API key (skipped by default)",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# B008: Depends() in FastAPI defaults is the idiomatic pattern.
+# DTZ003: naive-UTC storage is intentional (SQLite, all-local writes).
+# ISC004: cosmetic implicit string concat across wrapped test literals.
+ignore = ["B008", "DTZ003", "ISC004"]
