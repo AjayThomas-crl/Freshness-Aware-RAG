@@ -77,6 +77,8 @@ to configure.
 To generate natural-language answers in the **Ask** tab, add `GEMINI_API_KEY` to `.env`
 and pass it to the demo app environment. Without a Gemini key, `/query` and the raw
 supporting-context display still work; only answer synthesis is unavailable.
+The backend retries transient provider failures with `GEMINI_FALLBACK_MODEL` (default:
+`gemini-flash-lite-latest`).
 
 ## What to watch (and what it proves)
 

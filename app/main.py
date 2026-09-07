@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app import pipeline, scheduler, vectorstore
 from app.db import get_db, init_db
-from app.llm import GeminiGenerator
+from app.llm import GeminiGenerator, GeminiUnavailableError
 from app.models import Source
 from app.schemas import (
     AnswerIn,
@@ -124,6 +124,8 @@ def answer(body: AnswerIn, db: Session = Depends(get_db)):
             body.question,
             [context.model_dump() for context in contexts],
         )
+    except GeminiUnavailableError as exc:
+        raise HTTPException(503, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:

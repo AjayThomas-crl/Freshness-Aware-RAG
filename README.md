@@ -66,7 +66,8 @@ uv run uvicorn app.main:app --reload
 
 Firecrawl is only required for external URLs. Local/demo hosts use the keyless HTTP
 scraper. Set `GEMINI_API_KEY` to enable natural-language answers; `/query` still works
-without Gemini and returns raw retrieved contexts.
+without Gemini and returns raw retrieved contexts. If the configured Gemini model is
+temporarily overloaded, the answer path automatically tries `GEMINI_FALLBACK_MODEL`.
 
 ## API
 

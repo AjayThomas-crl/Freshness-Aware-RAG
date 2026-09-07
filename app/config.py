@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     top_k: int = 5
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
+    gemini_fallback_model: str = "gemini-flash-lite-latest"
     answer_top_k: int = 4
     # Hosts scraped with the plain HTTP scraper (no Firecrawl key needed).
     local_scrape_hosts: str = "localhost,127.0.0.1"

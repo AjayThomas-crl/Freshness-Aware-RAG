@@ -29,3 +29,28 @@ def test_missing_gemini_key_is_explicit(monkeypatch):
 
     with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
         llm.GeminiGenerator()
+
+
+def test_transient_primary_uses_fallback_model(monkeypatch):
+    calls = []
+
+    class Response:
+        text = "fallback answer"
+
+    class Models:
+        def generate_content(self, *, model, contents):
+            calls.append(model)
+            if model == "busy-model":
+                raise RuntimeError("503 UNAVAILABLE")
+            return Response()
+
+    class Client:
+        models = Models()
+
+    monkeypatch.setattr(llm.settings, "gemini_model", "busy-model")
+    monkeypatch.setattr(llm.settings, "gemini_fallback_model", "fallback-model")
+    generator = object.__new__(llm.GeminiGenerator)
+    generator._client = Client()
+
+    assert generator.generate_answer("What is the price?", [_context()]) == "fallback answer"
+    assert calls == ["busy-model", "fallback-model"]

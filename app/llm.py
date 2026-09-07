@@ -3,6 +3,10 @@ from collections.abc import Sequence
 from app.config import settings
 
 
+class GeminiUnavailableError(RuntimeError):
+    """Gemini was temporarily unavailable after fallback handling."""
+
+
 def build_grounded_prompt(question: str, contexts: Sequence[dict]) -> str:
     formatted = []
     for index, context in enumerate(contexts, start=1):
@@ -45,11 +49,36 @@ class GeminiGenerator:
         self._client = genai.Client(api_key=settings.gemini_api_key)
 
     def generate_answer(self, question: str, contexts: Sequence[dict]) -> str:
-        response = self._client.models.generate_content(
-            model=settings.gemini_model,
-            contents=build_grounded_prompt(question, contexts),
-        )
+        prompt = build_grounded_prompt(question, contexts)
+        try:
+            return self._generate(settings.gemini_model, prompt)
+        except Exception as primary_error:
+            if not _is_transient_provider_error(primary_error):
+                raise
+
+            fallback = settings.gemini_fallback_model
+            if not fallback or fallback == settings.gemini_model:
+                raise GeminiUnavailableError(str(primary_error)) from primary_error
+
+            try:
+                return self._generate(fallback, prompt)
+            except Exception as fallback_error:
+                raise GeminiUnavailableError(
+                    f"Primary model unavailable: {primary_error}; "
+                    f"fallback unavailable: {fallback_error}"
+                ) from fallback_error
+
+    def _generate(self, model: str, prompt: str) -> str:
+        response = self._client.models.generate_content(model=model, contents=prompt)
         answer = (response.text or "").strip()
         if not answer:
             raise RuntimeError("Gemini returned an empty answer")
         return answer
+
+
+def _is_transient_provider_error(error: Exception) -> bool:
+    status = getattr(error, "code", None) or getattr(error, "status_code", None)
+    if status in {429, 500, 502, 503, 504}:
+        return True
+    message = str(error).upper()
+    return any(token in message for token in ("UNAVAILABLE", "RESOURCE_EXHAUSTED", "429"))
