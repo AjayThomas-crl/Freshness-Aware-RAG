@@ -14,6 +14,8 @@ COPY pyproject.toml ./
 RUN pip install --upgrade pip && pip install -e .
 
 COPY app ./app
+COPY demo ./demo
+COPY frontend ./frontend
 
 RUN mkdir -p /app/data
 VOLUME ["/app/data"]

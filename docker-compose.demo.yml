@@ -1,0 +1,50 @@
+# One-command keyless demo stack:
+#   docker compose -f docker-compose.demo.yml up --build
+#
+# Services:
+#   competitors  clock-driven mock competitor site (content changes over time)
+#   app          FastAPI backend scraping `competitors` via the keyless HTTP scraper
+#   ui           Streamlit frontend talking to the backend over HTTP
+#
+# Open http://localhost:8501 and watch change history grow.
+
+services:
+  competitors:
+    build: .
+    container_name: demo-competitors
+    command: uvicorn demo.competitor_site:app --host 0.0.0.0 --port 9000
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: demo-app
+    depends_on:
+      - competitors
+    environment:
+      - DATABASE_URL=sqlite:////app/data/rag.db
+      - CHROMA_DIR=/app/data/chroma
+      - LOCAL_SCRAPE_HOSTS=competitors,localhost,127.0.0.1
+      - DEFAULT_INTERVAL_SECONDS=20
+      - FIRECRAWL_API_KEY=
+    ports:
+      - "8000:8000"
+    volumes:
+      - demo-data:/app/data
+    restart: unless-stopped
+
+  ui:
+    build: .
+    container_name: demo-ui
+    depends_on:
+      - app
+    environment:
+      - API_URL=http://app:8000
+    command: streamlit run frontend/app.py --server.address 0.0.0.0 --server.port 8501
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+volumes:
+  demo-data:

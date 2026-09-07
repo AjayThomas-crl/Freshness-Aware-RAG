@@ -6,8 +6,15 @@ answers two kinds of questions:
 1. **Current state** (live retrieval): "What is Nestlé's current price for milk chocolate?"
 2. **Change history** (versioned diff): "What changed on Nestlé's product page over the last month?"
 
-It scrapes with **Firecrawl**, chunks + fingerprints the text, stores **one row per
-content change** in SQLite, and keeps **only the live version of each chunk** embedded
+> **Try it instantly:** the project ships with a keyless, self-contained demo — a
+> clock-driven mock competitor site whose content changes over time — so you can watch
+> the full pipeline (scheduled scrape → change detection → versioned history → live
+> vector search) without a Firecrawl key or scraping a site you don't control.
+> See **[DEMO.md](DEMO.md)**.
+
+It scrapes with **Firecrawl** (or a plain HTTP scraper for local/demo hosts), chunks +
+fingerprints the text, stores **one row per content change** in SQLite, and keeps
+**only the live version of each chunk** embedded
 in a local **ChromaDB** vector store. Local embeddings via `sentence-transformers`,
 so there are no embedding API costs.
 
@@ -97,8 +104,9 @@ app/
 ├── db.py          # SQLAlchemy engine/session
 ├── models.py      # Source, ChunkVersion, ScrapeRun
 ├── schemas.py     # Pydantic request/response models
+├── htmltext.py    # stdlib HTML -> readable-paragraph extractor
 ├── chunker.py     # plain block chunker + SHA-256 content hashing
-├── scraper.py     # Firecrawl wrapper (returns markdown)
+├── scraper.py     # get_scraper(url) dispatch: HTTP for local hosts, Firecrawl else
 ├── embeddings.py  # local sentence-transformers embedder
 ├── vectorstore.py # Chroma: upsert/delete/search live chunks
 ├── pipeline.py    # CORE: change detection, versioning, embed/delete, history
@@ -107,8 +115,18 @@ app/
 frontend/
 ├── app.py         # Streamlit UI (sources / ask / history tabs)
 └── api_client.py  # thin HTTP client for the FastAPI backend
-tests/             # pytest suite (chunker, pipeline, API; live tests opt-in)
+demo/
+└── competitor_site.py  # clock-driven mock competitor site (see DEMO.md)
+scripts/
+└── seed_history.py     # deterministic history replay for screenshots
+tests/             # pytest suite (chunker, scraper, pipeline, API; live tests opt-in)
 ```
+
+## Demo
+
+A keyless, one-command way to see the pipeline working: a mock competitor site changes
+content on a clock, the scheduler polls it, and history grows live in the UI. Full
+guide in **[DEMO.md](DEMO.md)**.
 
 ## The core algorithm (`app/pipeline.py`)
 
@@ -142,7 +160,9 @@ Storage consequence: a page scraped 20× that changed twice yields ~12 chunk row
   "price fell 3.99 → 4.49" on *one* key you need a stable structural/semantic chunk id
   instead of a content hash. The current history shows the lineage (which blocks came
   and went) but does not pair old/new text.
-- **Firecrawl call is not integration-tested** (needs a real API key).
+- **Real Firecrawl path requires a key and a site that allows scraping**; the demo and
+  test suite use the keyless local path. Live Firecrawl integration lives in
+  `tests/test_live.py` (`pytest -m live`).
 - **"Last verified" freshness** is recorded in `scrape_runs` but not yet surfaced as
   recency metadata to the LLM in Path 1.
 - **No auth / multi-user** — single-tenant by design.
