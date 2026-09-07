@@ -62,6 +62,8 @@ def _refresh_jobs() -> None:
                 args=[source.id],
                 id=job_id,
                 replace_existing=True,
+                max_instances=1,
+                coalesce=True,
             )
 
     # Drop jobs whose source was deleted.

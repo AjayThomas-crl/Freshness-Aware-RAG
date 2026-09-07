@@ -152,3 +152,86 @@ def _install(text: str, monkeypatch):
     from tests.conftest import install_fakes
 
     return install_fakes(monkeypatch, text)
+
+
+class TestConcurrentWrites:
+    """Two sources scraped at once must not raise 'database is locked'."""
+
+    def test_parallel_process_source_succeeds(self, monkeypatch):
+        import threading
+        import time
+
+        from app.db import SessionLocal
+
+        content = _content("3.99")
+        barrier = threading.Barrier(2)
+        errors: list[Exception] = []
+
+        def fake_scrape(url):
+            barrier.wait()  # both threads reach the scrape at the same time
+            time.sleep(0.2)  # widen the overlap window
+            return content
+
+        class SlowEmbedder:
+            def __init__(self):
+                self.dim = 384
+
+            def embed(self, texts):
+                time.sleep(0.2)
+                return [[0.0] * self.dim for _ in texts]
+
+            def embed_query(self, text):
+                return [0.0] * self.dim
+
+        class NoopVectorStore:
+            def upsert_live(self, **kw):
+                pass
+
+            def delete(self, ids):
+                pass
+
+        class ScrapeOnce:
+            def scrape(self, url):
+                return fake_scrape(url)
+
+        monkeypatch.setattr(pipeline, "get_scraper", lambda url: ScrapeOnce())
+        monkeypatch.setattr(pipeline, "LocalEmbedder", lambda: SlowEmbedder())
+        monkeypatch.setattr(pipeline, "vectorstore", NoopVectorStore())
+
+        # Two sources, each processed in its own thread/session.
+        db = SessionLocal()
+        s1 = _add_source(db)
+        s2 = Source(name="cadbury", url="https://competitor.example/cadbury")
+        db.add(s2)
+        db.commit()
+        db.refresh(s1)
+        db.refresh(s2)
+        s1_id, s2_id = s1.id, s2.id
+        db.close()
+
+        results: dict[int, str] = {}
+        run_errors: dict[int, str] = {}
+
+        def run(src_id):
+            session = SessionLocal()
+            try:
+                src = session.get(Source, src_id)
+                run = pipeline.process_source(session, src)
+                results[src_id] = run.status
+                run_errors[src_id] = run.error or ""
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+            finally:
+                session.close()
+
+        t1 = threading.Thread(target=run, args=(s1_id,))
+        t2 = threading.Thread(target=run, args=(s2_id,))
+        t1.start()
+        t2.start()
+        t1.join(timeout=60)
+        t2.join(timeout=60)
+
+        assert not errors, f"concurrent write raised: {errors}"
+        assert results == {s1_id: "success", s2_id: "success"}, (
+            f"results={results} run_errors={run_errors}"
+        )

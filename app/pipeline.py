@@ -60,84 +60,109 @@ def detect_changes(db: Session, source_id: int, new_chunks: list[str]) -> tuple[
 
 
 def process_source(db: Session, source: Source) -> ScrapeRun:
-    run = ScrapeRun(source_id=source.id, status="success")
-    db.add(run)
-    db.flush()
+    """
+    Scrape + version one source.
+
+    Ordering matters for SQLite concurrency: ALL slow work (network scrape,
+    embedding) happens BEFORE any write, so no transaction is held open across
+    them. Writes are batched into one short transaction at the end. If a scrape
+    fails, only a small `failed` run row is written.
+    """
+    source_id = source.id
+    url = source.url
 
     try:
-        text = get_scraper(source.url).scrape(source.url)
+        text = get_scraper(url).scrape(url)
     except Exception as exc:  # noqa: BLE001 - record any failure for the run log
-        run.status = "failed"
-        run.error = str(exc)
-        run.finished_at = datetime.utcnow()
-        db.commit()
-        return run
+        return _write_failed_run(db, source_id, exc)
 
     chunks = chunk_text(text)
-    actions, unchanged = detect_changes(db, source.id, chunks)
+    actions, unchanged = detect_changes(db, source_id, chunks)
 
     added = [a for a in actions if a["action"] == "added"]
     removed = [a for a in actions if a["action"] == "removed"]
-
-    embedder = LocalEmbedder()
     added_texts = [a["content"] for a in added]
 
-    new_version_numbers = _next_version_numbers(db, source.id, len(added))
     now = datetime.utcnow()
+    # Capture version numbers and release the read transaction before embedding.
+    version_numbers = _next_version_numbers(db, source_id, len(added))
+    db.rollback()
 
-    version_rows = []
-    ids: list[str] = []
-    metadatas: list[dict] = []
-    for i, action in enumerate(added):
-        version = ChunkVersion(
-            source_id=source.id,
-            chunk_key=action["chunk_key"],
-            version_no=new_version_numbers[i],
-            content=action["content"],
-            content_hash=action["chunk_key"],
-            changed_at=now,
-            is_live=True,
-        )
-        db.add(version)
-        version_rows.append(version)
-        ids.append(_chroma_id(source.id, action["chunk_key"]))
-        metadatas.append(
-            {
-                "source_id": source.id,
-                "url": source.url,
-                "chunk_key": action["chunk_key"],
-                "version_no": version.version_no,
-                "changed_at": now.isoformat(),
-            }
-        )
-
-    # Retire removed blocks and drop their vectors from the live index.
-    for action in removed:
-        db.query(ChunkVersion).filter(
-            ChunkVersion.source_id == source.id,
-            ChunkVersion.chunk_key == action["chunk_key"],
-            ChunkVersion.is_live.is_(True),
-        ).update({ChunkVersion.is_live: False, ChunkVersion.removed_at: now})
-
-    removed_ids = [_chroma_id(source.id, a["chunk_key"]) for a in removed]
-
-    db.flush()
-
+    # Slow external work — no DB transaction open during it.
     if added_texts:
-        vectors = embedder.embed(added_texts)
+        vectors = LocalEmbedder().embed(added_texts)
         vectorstore.upsert_live(
-            ids=ids, contents=added_texts, embeddings=vectors, metadatas=metadatas
+            ids=[_chroma_id(source_id, a["chunk_key"]) for a in added],
+            contents=added_texts,
+            embeddings=vectors,
+            metadatas=_metadata_for(source_id, url, added, version_numbers, now),
         )
+    removed_ids = [_chroma_id(source_id, a["chunk_key"]) for a in removed]
     if removed_ids:
         vectorstore.delete(removed_ids)
 
-    run.chunks_added = len(added)
-    run.chunks_changed = 0
-    run.chunks_unchanged = unchanged
-    run.raw_text = text
-    run.finished_at = datetime.utcnow()
+    # One short write transaction.
+    run = ScrapeRun(
+        source_id=source_id,
+        status="success",
+        finished_at=now,
+        raw_text=text,
+        chunks_added=len(added),
+        chunks_changed=0,
+        chunks_unchanged=unchanged,
+    )
+    db.add(run)
+    for i, action in enumerate(added):
+        db.add(
+            ChunkVersion(
+                source_id=source_id,
+                chunk_key=action["chunk_key"],
+                version_no=version_numbers[i],
+                content=action["content"],
+                content_hash=action["chunk_key"],
+                changed_at=now,
+                is_live=True,
+            )
+        )
+    for action in removed:
+        db.query(ChunkVersion).filter(
+            ChunkVersion.source_id == source_id,
+            ChunkVersion.chunk_key == action["chunk_key"],
+            ChunkVersion.is_live.is_(True),
+        ).update({ChunkVersion.is_live: False, ChunkVersion.removed_at: now})
     db.commit()
     return run
+
+
+def _write_failed_run(db: Session, source_id: int, exc: Exception) -> ScrapeRun:
+    run = ScrapeRun(
+        source_id=source_id,
+        status="failed",
+        error=str(exc),
+        finished_at=datetime.utcnow(),
+    )
+    db.add(run)
+    db.commit()
+    return run
+
+
+def _metadata_for(
+    source_id: int,
+    url: str,
+    added: list[dict],
+    version_numbers: list[int],
+    now: datetime,
+) -> list[dict]:
+    return [
+        {
+            "source_id": source_id,
+            "url": url,
+            "chunk_key": action["chunk_key"],
+            "version_no": version_numbers[i],
+            "changed_at": now.isoformat(),
+        }
+        for i, action in enumerate(added)
+    ]
 
 
 def _next_version_numbers(db: Session, source_id: int, count: int) -> list[int]:
