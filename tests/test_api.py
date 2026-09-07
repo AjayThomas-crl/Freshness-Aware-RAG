@@ -58,7 +58,7 @@ class TestRunApi:
         from tests.conftest import FakeEmbedder, FakeScraper, FakeVectorStore
 
         embedder, vs = FakeEmbedder(), FakeVectorStore()
-        monkeypatch.setattr(pipeline, "FirecrawlScraper", lambda: FakeScraper(PAGE))
+        monkeypatch.setattr(pipeline, "get_scraper", lambda url: FakeScraper(PAGE))
         monkeypatch.setattr(pipeline, "LocalEmbedder", lambda: embedder)
         monkeypatch.setattr(pipeline, "vectorstore", vs)
 
@@ -116,7 +116,7 @@ class TestHistoryApi:
     def test_history_after_run(self, monkeypatch):
         from tests.conftest import FakeEmbedder, FakeScraper, FakeVectorStore
 
-        monkeypatch.setattr(pipeline, "FirecrawlScraper", lambda: FakeScraper(PAGE))
+        monkeypatch.setattr(pipeline, "get_scraper", lambda url: FakeScraper(PAGE))
         monkeypatch.setattr(pipeline, "LocalEmbedder", lambda: FakeEmbedder())
         monkeypatch.setattr(pipeline, "vectorstore", FakeVectorStore())
 

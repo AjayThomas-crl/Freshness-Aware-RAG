@@ -120,7 +120,7 @@ class TestChangeDetection:
             def scrape(self, url):
                 raise RuntimeError("network down")
 
-        monkeypatch.setattr(pl, "FirecrawlScraper", lambda: Boom())
+        monkeypatch.setattr(pl, "get_scraper", lambda url: Boom())
         src = _add_source(db)
 
         run = pipeline.process_source(db, src)

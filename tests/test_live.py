@@ -63,7 +63,7 @@ def test_full_pipeline_against_local_stores():
         )
 
         # Replace only the network leg; embeddings + Chroma are real.
-        pipeline.FirecrawlScraper = lambda: FakeScraper(page)
+        pipeline.get_scraper = lambda url: FakeScraper(page)
         run = pipeline.process_source(db, src)
         db.refresh(run)
 

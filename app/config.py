@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     embedding_model: str = "all-MiniLM-L6-v2"
     default_interval_seconds: int = 21600
     top_k: int = 5
+    # Hosts scraped with the plain HTTP scraper (no Firecrawl key needed).
+    local_scrape_hosts: str = "localhost,127.0.0.1"
 
 
 settings = Settings()

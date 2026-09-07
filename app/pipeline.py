@@ -7,7 +7,7 @@ from app.chunker import chunk_text, content_hash
 from app.config import settings
 from app.embeddings import LocalEmbedder
 from app.models import ChunkVersion, ScrapeRun, Source
-from app.scraper import FirecrawlScraper
+from app.scraper import get_scraper
 
 # ---------------------------------------------------------------------------
 # CORE ALGORITHM (boxed for you to study / rewrite)
@@ -65,7 +65,7 @@ def process_source(db: Session, source: Source) -> ScrapeRun:
     db.flush()
 
     try:
-        text = FirecrawlScraper().scrape(source.url)
+        text = get_scraper(source.url).scrape(source.url)
     except Exception as exc:  # noqa: BLE001 - record any failure for the run log
         run.status = "failed"
         run.error = str(exc)

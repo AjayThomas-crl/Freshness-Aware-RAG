@@ -79,7 +79,7 @@ def install_fakes(monkeypatch, text: str) -> tuple[FakeEmbedder, FakeVectorStore
     embedder = FakeEmbedder()
     vectorstore = FakeVectorStore()
 
-    monkeypatch.setattr(pipeline, "FirecrawlScraper", lambda: FakeScraper(text))
+    monkeypatch.setattr(pipeline, "get_scraper", lambda url: FakeScraper(text))
     monkeypatch.setattr(pipeline, "LocalEmbedder", lambda: embedder)
     monkeypatch.setattr(pipeline, "vectorstore", vectorstore)
     return embedder, vectorstore
