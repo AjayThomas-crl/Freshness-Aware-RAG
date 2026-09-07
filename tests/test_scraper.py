@@ -63,8 +63,12 @@ class TestLocalHttpScraper:
             def raise_for_status(self):
                 pass
 
-        monkeypatch.setattr(scraper.httpx, "Client", lambda **kw: type(
-            "C", (), {"get": lambda self, url, **k: FakeResp(), "close": lambda self: None}
-        )())
+        monkeypatch.setattr(
+            scraper.httpx,
+            "Client",
+            lambda **kw: type(
+                "C", (), {"get": lambda self, url, **k: FakeResp(), "close": lambda self: None}
+            )(),
+        )
         with pytest.raises(RuntimeError, match="No readable text"):
             LocalHttpScraper().scrape("http://localhost:9000/empty")
