@@ -55,6 +55,17 @@ class QueryOut(BaseModel):
     results: list[RetrievedChunk]
 
 
+class AnswerIn(BaseModel):
+    question: str
+    top_k: int = Field(default=4, ge=1, le=4)
+
+
+class AnswerOut(BaseModel):
+    question: str
+    answer: str
+    results: list[RetrievedChunk]
+
+
 class RunOut(BaseModel):
     run_id: int
     source_id: int

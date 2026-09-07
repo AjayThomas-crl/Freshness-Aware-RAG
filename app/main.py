@@ -5,8 +5,11 @@ from sqlalchemy.orm import Session
 
 from app import pipeline, scheduler, vectorstore
 from app.db import get_db, init_db
+from app.llm import GeminiGenerator
 from app.models import Source
 from app.schemas import (
+    AnswerIn,
+    AnswerOut,
     ChunkChange,
     HistoryOut,
     QueryIn,
@@ -86,7 +89,12 @@ def run_source_now(source_id: int, db: Session = Depends(get_db)):
 @app.post("/query", response_model=QueryOut)
 def query(body: QueryIn, db: Session = Depends(get_db)):
     """Path 1: retrieve live chunks by similarity. Freshness metadata rides along."""
-    results = pipeline.query_live(body.question, body.top_k)
+    out = _retrieve(db, body.question, body.top_k)
+    return QueryOut(question=body.question, results=out)
+
+
+def _retrieve(db: Session, question: str, top_k: int | None) -> list[RetrievedChunk]:
+    results = pipeline.query_live(question, top_k)
     db_sources = {s.id: s for s in db.query(Source).all()}
     out = []
     for r in results:
@@ -104,7 +112,23 @@ def query(body: QueryIn, db: Session = Depends(get_db)):
                 distance=r["distance"],
             )
         )
-    return QueryOut(question=body.question, results=out)
+    return out
+
+
+@app.post("/answer", response_model=AnswerOut)
+def answer(body: AnswerIn, db: Session = Depends(get_db)):
+    """Retrieve the top contexts, then synthesize a grounded Gemini answer."""
+    contexts = _retrieve(db, body.question, body.top_k)
+    try:
+        generated = GeminiGenerator().generate_answer(
+            body.question,
+            [context.model_dump() for context in contexts],
+        )
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, f"Gemini request failed: {exc}") from exc
+    return AnswerOut(question=body.question, answer=generated, results=contexts)
 
 
 @app.get("/sources/{source_id}/history", response_model=HistoryOut)

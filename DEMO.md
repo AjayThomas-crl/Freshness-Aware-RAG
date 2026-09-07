@@ -74,6 +74,10 @@ Open http://localhost:8501. The `competitors` service changes content every ~20s
 `app` service polls it on the same cadence, and the UI shows the result. Nothing else
 to configure.
 
+To generate natural-language answers in the **Ask** tab, add `GEMINI_API_KEY` to `.env`
+and pass it to the demo app environment. Without a Gemini key, `/query` and the raw
+supporting-context display still work; only answer synthesis is unavailable.
+
 ## What to watch (and what it proves)
 
 While the stack runs, click **Run now** a couple of times or just wait:

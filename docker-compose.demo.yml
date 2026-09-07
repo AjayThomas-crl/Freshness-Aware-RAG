@@ -28,6 +28,7 @@ services:
       - LOCAL_SCRAPE_HOSTS=competitors,localhost,127.0.0.1
       - DEFAULT_INTERVAL_SECONDS=20
       - FIRECRAWL_API_KEY=
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     ports:
       - "8000:8000"
     volumes:

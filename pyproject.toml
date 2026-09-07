@@ -15,6 +15,7 @@ dependencies = [
     "apscheduler",
     "httpx",
     "streamlit",
+    "google-genai",
 ]
 
 [project.optional-dependencies]

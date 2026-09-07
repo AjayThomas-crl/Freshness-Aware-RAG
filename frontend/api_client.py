@@ -57,6 +57,13 @@ def query(question: str, top_k: int) -> list[dict]:
         return resp.json()["results"]
 
 
+def answer(question: str, top_k: int = 4) -> dict:
+    with _client() as c:
+        resp = c.post("/answer", json={"question": question, "top_k": top_k})
+        resp.raise_for_status()
+        return resp.json()
+
+
 def history(source_id: int) -> list[dict]:
     with _client() as c:
         resp = c.get(f"/sources/{source_id}/history")

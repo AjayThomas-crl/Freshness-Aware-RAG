@@ -59,13 +59,14 @@ Firecrawl scrape ──► chunk_text() ──► content_hash() ──► detec
 ## Quick start
 
 ```bash
-cp .env.example .env        # set FIRECRAWL_API_KEY
+cp .env.example .env        # set GEMINI_API_KEY for generated answers
 uv venv --python 3.11 && uv pip install -e .
 uv run uvicorn app.main:app --reload
 ```
 
-Firecrawl API key: get one at https://firecrawl.dev (a keyless free tier exists but is
-rate-limited; the code currently requires a key).
+Firecrawl is only required for external URLs. Local/demo hosts use the keyless HTTP
+scraper. Set `GEMINI_API_KEY` to enable natural-language answers; `/query` still works
+without Gemini and returns raw retrieved contexts.
 
 ## API
 
@@ -76,6 +77,7 @@ rate-limited; the code currently requires a key).
 | `DELETE` | `/sources/{id}` | Remove a source |
 | `POST` | `/sources/{id}/run` | Trigger a scrape now (also runs on schedule) |
 | `POST` | `/query` | **Path 1** — live retrieval. Body: `{question, top_k?}` |
+| `POST` | `/answer` | Retrieve top contexts and generate a Gemini-grounded answer. Default `top_k=4` |
 | `GET` | `/sources/{id}/history` | **Path 2** — change lineage across versions |
 
 Scheduling: APScheduler runs in-process. Each enabled source scrapes every
@@ -84,8 +86,8 @@ Scheduling: APScheduler runs in-process. Each enabled source scrapes every
 ## Web UI (Streamlit)
 
 A thin client in `frontend/` that talks to the backend over HTTP (no direct
-pipeline imports). Three tabs: manage sources + trigger runs, ask questions
-(Path 1), and browse change history (Path 2).
+pipeline imports). Three tabs: manage sources + trigger runs, ask Gemini-grounded
+questions with supporting contexts, and browse change history (Path 2).
 
 ```bash
 # terminal 1 — backend

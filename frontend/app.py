@@ -6,7 +6,7 @@ import streamlit as st
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-import api_client as api  # noqa: E402
+import api_client as api
 
 st.set_page_config(page_title="Freshness-Aware RAG", layout="wide")
 
@@ -17,7 +17,7 @@ def _fmt(ts) -> str:
     if not ts:
         return "—"
     try:
-        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M")
+        return datetime.fromisoformat(str(ts)).strftime("%Y-%m-%d %H:%M")
     except ValueError:
         return str(ts)
 
@@ -86,24 +86,44 @@ with tab_sources:
 with tab_query:
     st.subheader("Ask about the current state")
     q = st.text_input("Question", placeholder="What is Nestlé's current price for milk chocolate?")
-    top_k = st.slider("Top-k chunks", min_value=1, max_value=10, value=5)
-    if st.button("Search", type="primary"):
+    top_k = st.slider("Context chunks", min_value=1, max_value=4, value=4)
+    if st.button("Generate answer", type="primary"):
         if not q.strip():
             st.warning("Enter a question.")
         else:
-            with st.spinner("Embedding + retrieving…"):
+            with st.spinner("Retrieving context and asking Gemini…"):
                 try:
-                    results = api.query(q, top_k)
+                    response = api.answer(q, top_k)
+                    answer = response["answer"]
+                    results = response["results"]
+                    st.session_state["last_answer"] = answer
+                    st.session_state["last_results"] = results
                 except Exception as exc:  # noqa: BLE001
                     st.error(str(exc))
-                    results = []
-            if not results:
-                st.info("No relevant chunks found. Run a scrape first.")
-            for r in results:
-                with st.container(border=True):
-                    st.markdown(f"**{r['source_name']}** · v{r['version_no']} · {_fmt(r['changed_at'])}")
-                    st.write(r["content"])
-                    st.caption(f"distance {r['distance']:.3f} · {r['url']}")
+                    try:
+                        results = api.query(q, top_k)
+                        st.session_state["last_answer"] = None
+                        st.session_state["last_results"] = results
+                    except Exception:  # noqa: BLE001 - raw retrieval is a graceful fallback
+                        st.session_state["last_answer"] = None
+                        st.session_state["last_results"] = []
+
+    answer = st.session_state.get("last_answer")
+    results = st.session_state.get("last_results", [])
+    if answer:
+        st.markdown("### Answer")
+        st.markdown(answer)
+        st.caption("Generated from the retrieved contexts below.")
+    if not results and not answer:
+        st.info("No relevant chunks found. Run a scrape first.")
+    if results:
+        st.markdown("### Supporting contexts")
+        for index, r in enumerate(results, start=1):
+            with st.expander(
+                f"{index}. {r['source_name']} · v{r['version_no']} · {_fmt(r['changed_at'])}"
+            ):
+                st.write(r["content"])
+                st.caption(f"distance {r['distance']:.3f} · {r['url']}")
 
 
 # -------------------------------------------------------------------------- History

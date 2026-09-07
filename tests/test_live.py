@@ -35,6 +35,26 @@ def test_embedder_produces_384_dim_vectors():
     assert len(vec) == 384
 
 
+def test_gemini_generates_grounded_answer():
+    if not os.getenv("GEMINI_API_KEY"):
+        pytest.skip("GEMINI_API_KEY not set")
+    from app.llm import GeminiGenerator
+
+    answer = GeminiGenerator().generate_answer(
+        "What is the price?",
+        [
+            {
+                "source_name": "Demo competitor",
+                "url": "https://example.com",
+                "version_no": 1,
+                "changed_at": "2026-09-07T00:00:00",
+                "content": "The product costs 9.99 USD.",
+            }
+        ],
+    )
+    assert isinstance(answer, str) and answer.strip()
+
+
 def test_full_pipeline_against_local_stores():
     """End-to-end against real SQLite + real Chroma (Firecrawl still faked)."""
     from app import pipeline

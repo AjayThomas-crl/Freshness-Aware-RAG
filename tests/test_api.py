@@ -106,6 +106,60 @@ class TestQueryApi:
             assert r["changed_at"] == "2026-09-06T00:00:00"
 
 
+class TestAnswerApi:
+    def test_answer_limits_contexts_to_four(self):
+        with TestClient(app) as client:
+            response = client.post(
+                "/answer",
+                json={"question": "What changed?", "top_k": 5},
+            )
+        assert response.status_code == 422
+
+    def test_answer_returns_generated_text_and_contexts(self, monkeypatch):
+        from app import main
+        from tests.conftest import FakeVectorStore
+
+        source_result = {
+            "content": "Alpha Cocoa premium bar costs 6.80 USD.",
+            "distance": 0.12,
+            "metadata": {
+                "source_id": "1",
+                "url": "http://localhost:9000/alpha",
+                "chunk_key": "abc123",
+                "version_no": "4",
+                "changed_at": "2026-09-07T12:00:00",
+            },
+        }
+        monkeypatch.setattr(pipeline, "query_live", lambda question, top_k=None: [source_result])
+
+        captured = {}
+
+        class FakeGemini:
+            def generate_answer(self, question, contexts):
+                captured["question"] = question
+                captured["contexts"] = contexts
+                return "Alpha Cocoa's premium bar costs 6.80 USD."
+
+        monkeypatch.setattr(main, "GeminiGenerator", FakeGemini)
+        monkeypatch.setattr(pipeline, "vectorstore", FakeVectorStore())
+
+        with TestClient(app) as client:
+            src = _start_source(client, name="Alpha Cocoa", url="http://localhost:9000/alpha")
+            # The fake Chroma metadata uses source id 1 in this isolated test.
+            assert src["id"] == 1
+            response = client.post(
+                "/answer",
+                json={"question": "What is the premium bar price?", "top_k": 4},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["answer"] == "Alpha Cocoa's premium bar costs 6.80 USD."
+        assert len(body["results"]) == 1
+        assert captured["question"] == "What is the premium bar price?"
+        assert captured["contexts"][0]["version_no"] == 4
+
+
 class TestHistoryApi:
     def test_history_empty_for_new_source(self):
         with TestClient(app) as client:
